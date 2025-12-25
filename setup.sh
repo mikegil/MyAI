@@ -226,8 +226,8 @@ ENABLED_AGENTS=("opencode")
 
 # Check for Claude Code
 if command -v claude >/dev/null 2>&1; then
-    read "enable_claude?Enable Claude Code as an additional backend? (y/n): "
-    if [ "$enable_claude" = "y" ] || [ "$enable_claude" = "Y" ]; then
+    read "enable_claude?Enable Claude Code as an additional backend? (Y/n): "
+    if [ -z "$enable_claude" ] || [ "$enable_claude" = "y" ] || [ "$enable_claude" = "Y" ]; then
         ENABLED_AGENTS+=("claude")
         echo "  ✓ Claude Code enabled"
     fi
@@ -247,8 +247,8 @@ fi
 
 # Check for Gemini
 if command -v gemini >/dev/null 2>&1; then
-    read "enable_gemini?Enable Gemini CLI as an additional backend? (y/n): "
-    if [ "$enable_gemini" = "y" ] || [ "$enable_gemini" = "Y" ]; then
+    read "enable_gemini?Enable Gemini CLI as an additional backend? (Y/n): "
+    if [ -z "$enable_gemini" ] || [ "$enable_gemini" = "y" ] || [ "$enable_gemini" = "Y" ]; then
         ENABLED_AGENTS+=("gemini")
         echo "  ✓ Gemini CLI enabled"
     fi
@@ -290,7 +290,11 @@ if [ ${#ENABLED_AGENTS[@]} -gt 1 ]; then
     done
     echo ""
 
-    read "default_choice?Select default (1-${#ENABLED_AGENTS[@]}): "
+    read "default_choice?Select default (1-${#ENABLED_AGENTS[@]}, default: 1): "
+
+    if [ -z "$default_choice" ]; then
+        default_choice=1
+    fi
 
     if [[ "$default_choice" =~ ^[0-9]+$ ]] && [ "$default_choice" -ge 1 ] && [ "$default_choice" -le ${#ENABLED_AGENTS[@]} ]; then
         DEFAULT_AGENT="${ENABLED_AGENTS[$default_choice]}"
@@ -524,9 +528,9 @@ if [ ${#ENABLED_AGENTS[@]} -gt 1 ]; then
     fi
     echo ""
 
-    read "setup_aliases?Add these aliases to your shell? (y/n): "
+    read "setup_aliases?Add these aliases to your shell? (Y/n): "
 
-    if [ "$setup_aliases" = "y" ] || [ "$setup_aliases" = "Y" ]; then
+    if [ -z "$setup_aliases" ] || [ "$setup_aliases" = "y" ] || [ "$setup_aliases" = "Y" ]; then
         # Remove old aliases if they exist
         sed -i '' "/^alias ${AI_SYSTEM_NAME}o=/d" "$CONFIG_FILE" 2>/dev/null
         sed -i '' "/^alias ${AI_SYSTEM_NAME}c=/d" "$CONFIG_FILE" 2>/dev/null
