@@ -72,5 +72,8 @@ Bash(cat:*)
 Bash($MYAI_HOME/bin/Buddy:*)
 Bash(git add:*)
 Bash(git commit:*)
+Bash(git log:*)
+Bash(git remote add:*)
+Bash(git push:*)
 Read(/Users/mgilbert/**)
 ```
