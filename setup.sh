@@ -270,6 +270,40 @@ echo ""
 echo "Enabled backends: ${ENABLED_AGENTS[*]}"
 echo ""
 
+# --- Default Backend Selection ---
+
+DEFAULT_AGENT="opencode"
+
+if [ ${#ENABLED_AGENTS[@]} -gt 1 ]; then
+    echo "You have multiple backends enabled. Which would you like as your default?"
+    echo ""
+
+    # Build menu
+    i=1
+    for agent in "${ENABLED_AGENTS[@]}"; do
+        case "$agent" in
+            opencode) echo "  $i) Open Code" ;;
+            claude)   echo "  $i) Claude Code" ;;
+            gemini)   echo "  $i) Gemini CLI" ;;
+        esac
+        ((i++))
+    done
+    echo ""
+
+    read "default_choice?Select default (1-${#ENABLED_AGENTS[@]}): "
+
+    if [[ "$default_choice" =~ ^[0-9]+$ ]] && [ "$default_choice" -ge 1 ] && [ "$default_choice" -le ${#ENABLED_AGENTS[@]} ]; then
+        DEFAULT_AGENT="${ENABLED_AGENTS[$default_choice]}"
+    fi
+
+    case "$DEFAULT_AGENT" in
+        opencode) echo "Default backend: Open Code" ;;
+        claude)   echo "Default backend: Claude Code" ;;
+        gemini)   echo "Default backend: Gemini CLI" ;;
+    esac
+    echo ""
+fi
+
 # --- MYAI_HOME Environment Variable ---
 
 echo "MyAI needs a home directory to store its configuration and scripts."
@@ -371,7 +405,7 @@ LAUNCHER_HEADER
 cat >> "$LAUNCHER_PATH" << LAUNCHER_CONFIG
 AI_NAME="$AI_SYSTEM_NAME"
 CONTEXT_DIR="$CONTEXT_DIR"
-DEFAULT_AGENT="opencode"
+DEFAULT_AGENT="$DEFAULT_AGENT"
 LAUNCHER_CONFIG
 
 # Add enabled agents array
@@ -384,12 +418,22 @@ show_help() {
     echo "Usage: $AI_NAME [--agent <name>] [args...]"
     echo ""
     echo "Options:"
-    echo "  --opencode    Use Open Code (default)"
-    echo "  --claude      Use Claude Code"
-    echo "  --gemini      Use Gemini CLI"
+    for agent in "${ENABLED_AGENTS[@]}"; do
+        local label=""
+        case "$agent" in
+            opencode) label="Open Code" ;;
+            claude)   label="Claude Code" ;;
+            gemini)   label="Gemini CLI" ;;
+        esac
+        if [ "$agent" = "$DEFAULT_AGENT" ]; then
+            echo "  --$agent    Use $label (default)"
+        else
+            echo "  --$agent    Use $label"
+        fi
+    done
     echo "  --help        Show this help message"
     echo ""
-    echo "Enabled agents: ${ENABLED_AGENTS[*]}"
+    echo "Default: $DEFAULT_AGENT"
 }
 
 # Parse arguments
@@ -444,9 +488,9 @@ echo ""
 
 # --- Shell Aliases ---
 
-# Only offer aliases if we have additional backends enabled
-if [[ " ${ENABLED_AGENTS[*]} " =~ " claude " ]] || [[ " ${ENABLED_AGENTS[*]} " =~ " gemini " ]]; then
-    echo "Would you like to set up some convenient aliases?"
+# Only offer aliases if we have multiple backends enabled
+if [ ${#ENABLED_AGENTS[@]} -gt 1 ]; then
+    echo "Would you like to set up some convenient aliases for non-default backends?"
 
     # Check if name has capitals
     AI_NAME_LOWER="${AI_SYSTEM_NAME:l}"
@@ -455,19 +499,26 @@ if [[ " ${ENABLED_AGENTS[*]} " =~ " claude " ]] || [[ " ${ENABLED_AGENTS[*]} " =
         HAS_CAPITALS=true
     fi
 
-    if [[ " ${ENABLED_AGENTS[*]} " =~ " claude " ]]; then
+    # Show aliases for non-default backends only
+    if [[ " ${ENABLED_AGENTS[*]} " =~ " opencode " ]] && [ "$DEFAULT_AGENT" != "opencode" ]; then
+        echo "  ${AI_SYSTEM_NAME}o  -> $AI_SYSTEM_NAME --opencode"
+    fi
+    if [[ " ${ENABLED_AGENTS[*]} " =~ " claude " ]] && [ "$DEFAULT_AGENT" != "claude" ]; then
         echo "  ${AI_SYSTEM_NAME}c  -> $AI_SYSTEM_NAME --claude"
     fi
-    if [[ " ${ENABLED_AGENTS[*]} " =~ " gemini " ]]; then
+    if [[ " ${ENABLED_AGENTS[*]} " =~ " gemini " ]] && [ "$DEFAULT_AGENT" != "gemini" ]; then
         echo "  ${AI_SYSTEM_NAME}g  -> $AI_SYSTEM_NAME --gemini"
     fi
 
     if [ "$HAS_CAPITALS" = true ]; then
         echo "  ${AI_NAME_LOWER}    -> $AI_SYSTEM_NAME"
-        if [[ " ${ENABLED_AGENTS[*]} " =~ " claude " ]]; then
+        if [[ " ${ENABLED_AGENTS[*]} " =~ " opencode " ]] && [ "$DEFAULT_AGENT" != "opencode" ]; then
+            echo "  ${AI_NAME_LOWER}o   -> $AI_SYSTEM_NAME --opencode"
+        fi
+        if [[ " ${ENABLED_AGENTS[*]} " =~ " claude " ]] && [ "$DEFAULT_AGENT" != "claude" ]; then
             echo "  ${AI_NAME_LOWER}c   -> $AI_SYSTEM_NAME --claude"
         fi
-        if [[ " ${ENABLED_AGENTS[*]} " =~ " gemini " ]]; then
+        if [[ " ${ENABLED_AGENTS[*]} " =~ " gemini " ]] && [ "$DEFAULT_AGENT" != "gemini" ]; then
             echo "  ${AI_NAME_LOWER}g   -> $AI_SYSTEM_NAME --gemini"
         fi
     fi
@@ -477,18 +528,24 @@ if [[ " ${ENABLED_AGENTS[*]} " =~ " claude " ]] || [[ " ${ENABLED_AGENTS[*]} " =
 
     if [ "$setup_aliases" = "y" ] || [ "$setup_aliases" = "Y" ]; then
         # Remove old aliases if they exist
+        sed -i '' "/^alias ${AI_SYSTEM_NAME}o=/d" "$CONFIG_FILE" 2>/dev/null
         sed -i '' "/^alias ${AI_SYSTEM_NAME}c=/d" "$CONFIG_FILE" 2>/dev/null
         sed -i '' "/^alias ${AI_SYSTEM_NAME}g=/d" "$CONFIG_FILE" 2>/dev/null
         sed -i '' "/^alias ${AI_NAME_LOWER}=/d" "$CONFIG_FILE" 2>/dev/null
+        sed -i '' "/^alias ${AI_NAME_LOWER}o=/d" "$CONFIG_FILE" 2>/dev/null
         sed -i '' "/^alias ${AI_NAME_LOWER}c=/d" "$CONFIG_FILE" 2>/dev/null
         sed -i '' "/^alias ${AI_NAME_LOWER}g=/d" "$CONFIG_FILE" 2>/dev/null
 
-        # Add new aliases
-        if [[ " ${ENABLED_AGENTS[*]} " =~ " claude " ]]; then
+        # Add aliases for non-default backends only
+        if [[ " ${ENABLED_AGENTS[*]} " =~ " opencode " ]] && [ "$DEFAULT_AGENT" != "opencode" ]; then
+            echo "alias ${AI_SYSTEM_NAME}o=\"$AI_SYSTEM_NAME --opencode\"" >> "$CONFIG_FILE"
+            echo "  ✓ Added alias: ${AI_SYSTEM_NAME}o"
+        fi
+        if [[ " ${ENABLED_AGENTS[*]} " =~ " claude " ]] && [ "$DEFAULT_AGENT" != "claude" ]; then
             echo "alias ${AI_SYSTEM_NAME}c=\"$AI_SYSTEM_NAME --claude\"" >> "$CONFIG_FILE"
             echo "  ✓ Added alias: ${AI_SYSTEM_NAME}c"
         fi
-        if [[ " ${ENABLED_AGENTS[*]} " =~ " gemini " ]]; then
+        if [[ " ${ENABLED_AGENTS[*]} " =~ " gemini " ]] && [ "$DEFAULT_AGENT" != "gemini" ]; then
             echo "alias ${AI_SYSTEM_NAME}g=\"$AI_SYSTEM_NAME --gemini\"" >> "$CONFIG_FILE"
             echo "  ✓ Added alias: ${AI_SYSTEM_NAME}g"
         fi
@@ -496,11 +553,15 @@ if [[ " ${ENABLED_AGENTS[*]} " =~ " claude " ]] || [[ " ${ENABLED_AGENTS[*]} " =
         if [ "$HAS_CAPITALS" = true ]; then
             echo "alias ${AI_NAME_LOWER}=\"$AI_SYSTEM_NAME\"" >> "$CONFIG_FILE"
             echo "  ✓ Added alias: ${AI_NAME_LOWER}"
-            if [[ " ${ENABLED_AGENTS[*]} " =~ " claude " ]]; then
+            if [[ " ${ENABLED_AGENTS[*]} " =~ " opencode " ]] && [ "$DEFAULT_AGENT" != "opencode" ]; then
+                echo "alias ${AI_NAME_LOWER}o=\"$AI_SYSTEM_NAME --opencode\"" >> "$CONFIG_FILE"
+                echo "  ✓ Added alias: ${AI_NAME_LOWER}o"
+            fi
+            if [[ " ${ENABLED_AGENTS[*]} " =~ " claude " ]] && [ "$DEFAULT_AGENT" != "claude" ]; then
                 echo "alias ${AI_NAME_LOWER}c=\"$AI_SYSTEM_NAME --claude\"" >> "$CONFIG_FILE"
                 echo "  ✓ Added alias: ${AI_NAME_LOWER}c"
             fi
-            if [[ " ${ENABLED_AGENTS[*]} " =~ " gemini " ]]; then
+            if [[ " ${ENABLED_AGENTS[*]} " =~ " gemini " ]] && [ "$DEFAULT_AGENT" != "gemini" ]; then
                 echo "alias ${AI_NAME_LOWER}g=\"$AI_SYSTEM_NAME --gemini\"" >> "$CONFIG_FILE"
                 echo "  ✓ Added alias: ${AI_NAME_LOWER}g"
             fi
@@ -519,6 +580,7 @@ echo "  AI Assistant:    $AI_SYSTEM_NAME"
 echo "  MYAI_HOME:       $MYAI_HOME"
 echo "  Context Dir:     $CONTEXT_DIR"
 echo "  Backends:        ${ENABLED_AGENTS[*]}"
+echo "  Default:         $DEFAULT_AGENT"
 echo ""
 echo "  Launcher:        $LAUNCHER_PATH"
 echo ""
