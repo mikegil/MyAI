@@ -16,16 +16,17 @@ MyAI is a Personal AI Agent System that creates personalized AI assistant config
 
 The script is organized into labeled sections:
 
-1. **Banner** - ASCII art display
+1. **Banner** - ASCII art display with lowercase 'y' in MyAI
 2. **Shell Detection** - `detect_shell()` and `get_config_file()` functions
 3. **Component Checking** - `check_components()` parses `third-party-components.md`
 4. **AI System Name** - User names their assistant (default: Max)
-5. **AI Agent Backend Selection** - Open Code required; Claude/Gemini optional
-6. **MYAI_HOME Environment Variable** - Installation directory setup
-7. **Context Directory** - Working directory for the AI
-8. **Create Launcher Script** - Single script with `--opencode`, `--claude`, `--gemini` flags
-9. **Shell Aliases** - Optional lowercase aliases (e.g., `buddyc`, `buddyg`)
-10. **Setup Complete** - Summary message
+5. **AI Agent Backend Selection** - Open Code required; Claude/Gemini optional (default: Y)
+6. **Default Backend Selection** - If multiple backends enabled, user chooses default (default: Open Code)
+7. **MYAI_HOME Environment Variable** - Installation directory setup (keeps existing by default)
+8. **Context Directory** - Working directory for the AI (keeps existing by default)
+9. **Create Launcher Script** - Single script with `--opencode`, `--claude`, `--gemini` flags
+10. **Shell Aliases** - Aliases for non-default backends only (e.g., `buddyo`, `buddyc`, `buddyg`)
+11. **Setup Complete** - Summary message showing all configuration
 
 ## Component System
 
@@ -40,23 +41,39 @@ The script parses this file to check/install dependencies. Required components b
 ## Generated Launcher
 
 The launcher script at `$MYAI_HOME/bin/$AI_NAME`:
-- Defaults to Open Code
-- Accepts `--claude`, `--gemini`, `--opencode` flags
+- Uses user-selected default backend (Open Code if not specified)
+- Accepts `--opencode`, `--claude`, `--gemini` flags to override default
+- Shows `(default)` marker in `--help` for the selected default
 - Validates agent is in `ENABLED_AGENTS` array
 - Changes to context directory before exec
 
-## Shell Config Modifications
+## Shell Aliases
 
-The script modifies the user's shell config file to add:
-- `MYAI_HOME` export
-- `$MYAI_HOME/bin` to PATH
-- Optional aliases for quick access
+Aliases are only created for non-default backends:
+- If Open Code is default: `Buddyc`, `Buddyg` (and lowercase versions)
+- If Claude is default: `Buddyo`, `Buddyg` (and lowercase versions)
+- If Gemini is default: `Buddyo`, `Buddyc` (and lowercase versions)
+
+## Prompt Defaults
+
+Most prompts default to Y (press Enter to accept):
+- Enable Claude Code: Y
+- Enable Gemini CLI: Y
+- Default backend: 1 (Open Code)
+- Keep MYAI_HOME location: Y
+- Keep context directory: Y
+- Add aliases: Y
 
 ## Testing
 
-Run with piped input for non-interactive testing:
+Run with piped input for non-interactive testing (all defaults):
 ```bash
-printf "Buddy\ny\ny\ny\n\ny\n" | ./setup.sh
+printf "Buddy\n\n\n\n\n\n\n" | ./setup.sh
+```
+
+Or with specific choices:
+```bash
+printf "Buddy\ny\ny\n2\ny\n\ny\n" | ./setup.sh  # Claude as default
 ```
 
 ## Allowed Commands
