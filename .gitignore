@@ -62,7 +62,5 @@ private/
 secrets/
 credentials/
 
-# Max Update System (sideloading)
-.claude/max_updates/
-.claude/max_backups/
-.claude/.max-sync-history
+# Claude Code local settings
+.claude/
