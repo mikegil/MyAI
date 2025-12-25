@@ -315,7 +315,7 @@ echo ""
 
 if [ -n "$MYAI_HOME" ]; then
     echo "MYAI_HOME is already set to: $MYAI_HOME"
-    read "keep_home?Keep this location? (y/n): "
+    read "keep_home?Keep this location? (Y/n): "
     if [ "$keep_home" = "n" ] || [ "$keep_home" = "N" ]; then
         unset MYAI_HOME
     fi
@@ -373,13 +373,29 @@ echo "This is where your AI assistant will store its context and files."
 echo ""
 
 DEFAULT_CONTEXT_DIR="$HOME/Documents/$AI_SYSTEM_NAME"
-read "context_dir?Where would you like the context directory? (default: $DEFAULT_CONTEXT_DIR): "
 
-if [ -z "$context_dir" ]; then
-    CONTEXT_DIR="$DEFAULT_CONTEXT_DIR"
+# Check if default context directory already exists
+if [ -d "$DEFAULT_CONTEXT_DIR" ]; then
+    echo "Context directory already exists: $DEFAULT_CONTEXT_DIR"
+    read "keep_context?Keep this location? (Y/n): "
+    if [ "$keep_context" = "n" ] || [ "$keep_context" = "N" ]; then
+        read "context_dir?Where would you like the context directory? "
+        if [ -n "$context_dir" ]; then
+            CONTEXT_DIR="${context_dir/#\~/$HOME}"
+        else
+            CONTEXT_DIR="$DEFAULT_CONTEXT_DIR"
+        fi
+    else
+        CONTEXT_DIR="$DEFAULT_CONTEXT_DIR"
+    fi
 else
-    # Expand ~ if user typed it
-    CONTEXT_DIR="${context_dir/#\~/$HOME}"
+    read "context_dir?Where would you like the context directory? (default: $DEFAULT_CONTEXT_DIR): "
+    if [ -z "$context_dir" ]; then
+        CONTEXT_DIR="$DEFAULT_CONTEXT_DIR"
+    else
+        # Expand ~ if user typed it
+        CONTEXT_DIR="${context_dir/#\~/$HOME}"
+    fi
 fi
 
 echo "Context directory: $CONTEXT_DIR"
