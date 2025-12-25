@@ -58,3 +58,19 @@ Run with piped input for non-interactive testing:
 ```bash
 printf "Buddy\ny\ny\ny\n\ny\n" | ./setup.sh
 ```
+
+## Allowed Commands
+
+The following commands are pre-approved and don't require user confirmation:
+
+```
+Bash(chmod:*)
+Bash(./setup.sh)
+Bash(command -v:*)
+Bash(printf:*)
+Bash(cat:*)
+Bash($MYAI_HOME/bin/Buddy:*)
+Bash(git add:*)
+Bash(git commit:*)
+Read(/Users/mgilbert/**)
+```
