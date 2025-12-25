@@ -1,321 +1,531 @@
 #!/bin/zsh
 
-# Setup script for MyAI 
+# MyAI Setup Script
 
-echo "Setting up MyAI..."
+# Display banner
+cat << 'BANNER'
 
-# Detect default shell (moved early for reuse in other setup operations)
-# Use $SHELL if available, otherwise try to get from passwd/dscl
-if [ -n "$SHELL" ]; then
-    DEFAULT_SHELL="$SHELL"
-elif command -v getent >/dev/null 2>&1; then
-    DEFAULT_SHELL=$(getent passwd "$USER" | cut -d: -f7)
-elif [[ "$OSTYPE" == "darwin"* ]]; then
-    # macOS: use dscl to get user shell
-    DEFAULT_SHELL=$(dscl . -read "/Users/$USER" UserShell | awk '{print $2}')
-else
-    # Fallback to /bin/bash
-    DEFAULT_SHELL="/bin/bash"
-fi
-SHELL_NAME=$(basename "$DEFAULT_SHELL")
+  ███╗   ███╗        █████╗ ██╗
+  ████╗ ████║██╗ ██╗██╔══██╗██║
+  ██╔████╔██║╚██▄██╔╝███████║██║
+  ██║╚██╔╝██║ ╚███╔╝ ██╔══██║██║
+  ██║ ╚═╝ ██║  ███║  ██║  ██║██║
+  ╚═╝     ╚═╝  ╚══╝  ╚═╝  ╚═╝╚═╝
 
-echo "Detected default shell: $SHELL_NAME"
+  Personal AI Agent System
 
-# Determine the appropriate config file based on shell
-case "$SHELL_NAME" in
-    bash)
-        # Check for .bashrc (Linux) or .bash_profile (macOS)
-        if [ -f "$HOME/.bash_profile" ] || [ ! -f "$HOME/.bashrc" ]; then
-            CONFIG_FILE="$HOME/.bash_profile"
-        else
+BANNER
+
+echo "Welcome to MyAI Setup!"
+echo ""
+echo "This script will walk you through configuring your personal AI agent."
+echo "You'll be asked to make a few choices along the way."
+echo ""
+
+# --- Shell Detection ---
+
+detect_shell() {
+    if [ -n "$SHELL" ]; then
+        DEFAULT_SHELL="$SHELL"
+    elif command -v getent >/dev/null 2>&1; then
+        DEFAULT_SHELL=$(getent passwd "$USER" | cut -d: -f7)
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        DEFAULT_SHELL=$(dscl . -read "/Users/$USER" UserShell | awk '{print $2}')
+    else
+        DEFAULT_SHELL="/bin/bash"
+    fi
+    SHELL_NAME=$(basename "$DEFAULT_SHELL")
+}
+
+get_config_file() {
+    case "$SHELL_NAME" in
+        bash)
+            if [ -f "$HOME/.bash_profile" ] || [ ! -f "$HOME/.bashrc" ]; then
+                CONFIG_FILE="$HOME/.bash_profile"
+            else
+                CONFIG_FILE="$HOME/.bashrc"
+            fi
+            ;;
+        zsh)
+            CONFIG_FILE="$HOME/.zshrc"
+            ;;
+        fish)
+            CONFIG_FILE="$HOME/.config/fish/config.fish"
+            ;;
+        *)
             CONFIG_FILE="$HOME/.bashrc"
-        fi
-        ;;
-    zsh)
-        CONFIG_FILE="$HOME/.zshrc"
-        ;;
-    fish)
-        CONFIG_FILE="$HOME/.config/fish/config.fish"
-        ;;
-    *)
-        # Default to .bashrc for unknown shells
-        CONFIG_FILE="$HOME/.bashrc"
-        echo "Warning: Unknown shell type, defaulting to .bashrc"
-        ;;
-esac
+            echo "Warning: Unknown shell '$SHELL_NAME', defaulting to .bashrc"
+            ;;
+    esac
+}
 
+detect_shell
+get_config_file
+
+echo "Detected shell: $SHELL_NAME"
 echo "Config file: $CONFIG_FILE"
+echo ""
 
-# Ask for AI system name
-read "ai_name?What would you like to call your AI System? (default: Max): "
+# --- Component Checking ---
+
+SCRIPT_DIR="${0:A:h}"
+COMPONENTS_FILE="$SCRIPT_DIR/third-party-components.md"
+
+check_components() {
+    local section=""
+    local missing_required=()
+    local missing_required_formulas=()
+    local found_optional=()
+    local missing_optional=()
+    local has_brew=false
+
+    if [ ! -f "$COMPONENTS_FILE" ]; then
+        echo "Warning: Components file not found: $COMPONENTS_FILE"
+        return 1
+    fi
+
+    # Check for Homebrew first
+    if command -v brew >/dev/null 2>&1; then
+        has_brew=true
+    fi
+
+    while IFS= read -r line; do
+        # Detect section headers
+        if [[ "$line" == "## Required" ]]; then
+            section="required"
+            continue
+        elif [[ "$line" == "## Optional" ]]; then
+            section="optional"
+            continue
+        fi
+
+        # Parse table rows (skip header and separator lines)
+        if [[ "$line" == \|*\|*\|*\| ]] && [[ "$line" != *"---"* ]] && [[ "$line" != *"Component"* ]]; then
+            # Extract component name, command, and brew formula from table row
+            local component=$(echo "$line" | cut -d'|' -f2 | xargs)
+            local command=$(echo "$line" | cut -d'|' -f3 | sed 's/`//g' | xargs)
+            local formula=$(echo "$line" | cut -d'|' -f4 | sed 's/`//g' | xargs)
+
+            if [ -n "$command" ] && [ -n "$section" ]; then
+                if command -v "$command" >/dev/null 2>&1; then
+                    if [ "$section" = "optional" ]; then
+                        found_optional+=("$component")
+                    fi
+                else
+                    if [ "$section" = "required" ]; then
+                        missing_required+=("$component ($command)")
+                        if [ -n "$formula" ]; then
+                            missing_required_formulas+=("$formula")
+                        fi
+                    else
+                        missing_optional+=("$component")
+                    fi
+                fi
+            fi
+        fi
+    done < "$COMPONENTS_FILE"
+
+    # Report results
+    echo "Component Check:"
+    echo "----------------"
+
+    if [ ${#missing_required[@]} -gt 0 ]; then
+        echo "Missing required components:"
+        for comp in "${missing_required[@]}"; do
+            echo "  ✗ $comp"
+        done
+        echo ""
+
+        # Offer to install via Homebrew
+        if [ ${#missing_required_formulas[@]} -gt 0 ]; then
+            if [ "$has_brew" = true ]; then
+                echo "Homebrew detected. Would you like to install missing components?"
+                read "install_choice?Install via brew? (y/n): "
+                if [ "$install_choice" = "y" ] || [ "$install_choice" = "Y" ]; then
+                    echo ""
+                    for formula in "${missing_required_formulas[@]}"; do
+                        echo "Installing $formula..."
+                        brew install "$formula"
+                    done
+                    echo ""
+                    echo "Installation complete. Re-checking components..."
+                    echo ""
+                    check_components
+                    return
+                fi
+            else
+                echo "Homebrew is not installed. Would you like to install it?"
+                read "install_brew?Install Homebrew? (y/n): "
+                if [ "$install_brew" = "y" ] || [ "$install_brew" = "Y" ]; then
+                    echo ""
+                    echo "Installing Homebrew..."
+                    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+                    echo ""
+                    echo "Homebrew installed. Re-checking components..."
+                    echo ""
+                    check_components
+                    return
+                fi
+            fi
+        fi
+
+        echo ""
+        echo "Please install the following required components and re-run this script:"
+        for comp in "${missing_required[@]}"; do
+            echo "  - $comp"
+        done
+        exit 1
+    else
+        echo "  ✓ All required components found"
+    fi
+
+    if [ ${#found_optional[@]} -gt 0 ]; then
+        echo "Optional components available:"
+        for comp in "${found_optional[@]}"; do
+            echo "  ✓ $comp"
+        done
+    fi
+
+    if [ ${#missing_optional[@]} -gt 0 ]; then
+        echo "Optional components not found:"
+        for comp in "${missing_optional[@]}"; do
+            echo "  - $comp"
+        done
+    fi
+
+    echo ""
+}
+
+check_components
+
+# --- AI System Name ---
+
+echo "Your personal AI assistant needs a name."
+echo "Mine's called Max, but you're free to call yours whatever you like."
+echo ""
+read "ai_name?What would you like to call it? (default: Max): "
+
 if [ -z "$ai_name" ]; then
     AI_SYSTEM_NAME="Max"
 else
     AI_SYSTEM_NAME="$ai_name"
 fi
-echo "AI System name: $AI_SYSTEM_NAME"
 
-# Ask for AI Agent System
 echo ""
-echo "Which AI Agent System would you like to use?"
-echo "1) Claude Code"
-echo "2) Open Code"
-echo "3) Gemini"
-echo "4) Other"
-read "agent_choice?Enter your choice (1-4, default: 1): "
+echo "Great! Your AI assistant will be called: $AI_SYSTEM_NAME"
+echo ""
 
-if [ -z "$agent_choice" ]; then
-    agent_choice="1"
+# --- AI Agent Backend Selection ---
+
+echo "Open Code is your primary AI agent backend."
+echo "You can optionally enable additional backends, but this is not required."
+echo ""
+
+# Initialize array of enabled agents
+ENABLED_AGENTS=("opencode")
+
+# Check for Claude Code
+if command -v claude >/dev/null 2>&1; then
+    read "enable_claude?Enable Claude Code as an additional backend? (y/n): "
+    if [ "$enable_claude" = "y" ] || [ "$enable_claude" = "Y" ]; then
+        ENABLED_AGENTS+=("claude")
+        echo "  ✓ Claude Code enabled"
+    fi
+else
+    read "install_claude?Claude Code is not installed. Would you like to install it? (optional) (y/n): "
+    if [ "$install_claude" = "y" ] || [ "$install_claude" = "Y" ]; then
+        echo "  Installing Claude Code..."
+        brew install claude-code
+        if command -v claude >/dev/null 2>&1; then
+            ENABLED_AGENTS+=("claude")
+            echo "  ✓ Claude Code installed and enabled"
+        else
+            echo "  ✗ Installation failed"
+        fi
+    fi
 fi
 
-case "$agent_choice" in
-    1)
-        AI_AGENT_COMMAND="claude"
-        echo "Selected: Claude Code"
-        ;;
-    2)
-        AI_AGENT_COMMAND="opencode"
-        echo "Selected: Open Code"
-        ;;
-    3)
-        AI_AGENT_COMMAND="gemini"
-        echo "Selected: Gemini"
-        ;;
-    4)
-        read "custom_command?Enter the command to invoke your AI Agent System: "
-        if [ -z "$custom_command" ]; then
-            echo "Error: Custom command cannot be empty."
-            exit 1
+# Check for Gemini
+if command -v gemini >/dev/null 2>&1; then
+    read "enable_gemini?Enable Gemini CLI as an additional backend? (y/n): "
+    if [ "$enable_gemini" = "y" ] || [ "$enable_gemini" = "Y" ]; then
+        ENABLED_AGENTS+=("gemini")
+        echo "  ✓ Gemini CLI enabled"
+    fi
+else
+    read "install_gemini?Gemini CLI is not installed. Would you like to install it? (optional) (y/n): "
+    if [ "$install_gemini" = "y" ] || [ "$install_gemini" = "Y" ]; then
+        echo "  Installing Gemini CLI..."
+        brew install gemini-cli
+        if command -v gemini >/dev/null 2>&1; then
+            ENABLED_AGENTS+=("gemini")
+            echo "  ✓ Gemini CLI installed and enabled"
+        else
+            echo "  ✗ Installation failed"
         fi
-        AI_AGENT_COMMAND="$custom_command"
-        echo "Selected: Custom command ($AI_AGENT_COMMAND)"
-        ;;
-    *)
-        echo "Invalid choice. Defaulting to Claude Code."
-        AI_AGENT_COMMAND="claude"
-        ;;
-esac
+    fi
+fi
 
-# Ask for Context directory location
+echo ""
+echo "Enabled backends: ${ENABLED_AGENTS[*]}"
+echo ""
+
+# --- MYAI_HOME Environment Variable ---
+
+echo "MyAI needs a home directory to store its configuration and scripts."
+echo ""
+
+if [ -n "$MYAI_HOME" ]; then
+    echo "MYAI_HOME is already set to: $MYAI_HOME"
+    read "keep_home?Keep this location? (y/n): "
+    if [ "$keep_home" = "n" ] || [ "$keep_home" = "N" ]; then
+        unset MYAI_HOME
+    fi
+fi
+
+if [ -z "$MYAI_HOME" ]; then
+    read "myai_home?Where would you like to install MyAI? (default: ~/.myai): "
+    if [ -z "$myai_home" ]; then
+        MYAI_HOME="$HOME/.myai"
+    else
+        # Expand ~ if user typed it
+        MYAI_HOME="${myai_home/#\~/$HOME}"
+    fi
+fi
+
+echo "MYAI_HOME: $MYAI_HOME"
+
+# Create directory if it doesn't exist
+if [ ! -d "$MYAI_HOME" ]; then
+    echo "Creating directory: $MYAI_HOME"
+    mkdir -p "$MYAI_HOME"
+fi
+
+# Create bin subdirectory
+if [ ! -d "$MYAI_HOME/bin" ]; then
+    mkdir -p "$MYAI_HOME/bin"
+    echo "Created bin directory: $MYAI_HOME/bin"
+fi
+
+# Check if MYAI_HOME is already in shell config
+if grep -q "export MYAI_HOME=" "$CONFIG_FILE" 2>/dev/null; then
+    # Update existing entry
+    sed -i '' "s|export MYAI_HOME=.*|export MYAI_HOME=\"$MYAI_HOME\"|" "$CONFIG_FILE"
+    echo "Updated MYAI_HOME in $CONFIG_FILE"
+else
+    # Add new entry
+    echo "" >> "$CONFIG_FILE"
+    echo "# MyAI configuration" >> "$CONFIG_FILE"
+    echo "export MYAI_HOME=\"$MYAI_HOME\"" >> "$CONFIG_FILE"
+    echo "Added MYAI_HOME to $CONFIG_FILE"
+fi
+
+# Check if bin is in PATH in shell config
+if ! grep -q 'MYAI_HOME/bin' "$CONFIG_FILE" 2>/dev/null; then
+    echo 'export PATH="$MYAI_HOME/bin:$PATH"' >> "$CONFIG_FILE"
+    echo "Added MYAI_HOME/bin to PATH in $CONFIG_FILE"
+fi
+
+echo ""
+
+# --- Context Directory ---
+
+echo "$AI_SYSTEM_NAME needs a directory to work in."
+echo "This is where your AI assistant will store its context and files."
+echo ""
+
 DEFAULT_CONTEXT_DIR="$HOME/Documents/$AI_SYSTEM_NAME"
-read "context_dir?Where would you like to store the Context for $AI_SYSTEM_NAME? (default: $DEFAULT_CONTEXT_DIR): "
+read "context_dir?Where would you like the context directory? (default: $DEFAULT_CONTEXT_DIR): "
 
 if [ -z "$context_dir" ]; then
     CONTEXT_DIR="$DEFAULT_CONTEXT_DIR"
 else
     # Expand ~ if user typed it
     CONTEXT_DIR="${context_dir/#\~/$HOME}"
-    # Additional zsh tilde expansion
-    if [[ "$CONTEXT_DIR" == ~* ]]; then
-        CONTEXT_DIR="${CONTEXT_DIR/#\~/$HOME}"
-    fi
 fi
 
 echo "Context directory: $CONTEXT_DIR"
 
-# Check if context directory exists, create if needed
+# Create directory if it doesn't exist
 if [ ! -d "$CONTEXT_DIR" ]; then
-    echo "Context directory does not exist: $CONTEXT_DIR"
-    read "create_context_choice?Do you want to create it? (y/n): "
-    if [ "$create_context_choice" = "y" ] || [ "$create_context_choice" = "Y" ]; then
-        mkdir -p "$CONTEXT_DIR"
-        echo "Created context directory: $CONTEXT_DIR"
-    else
-        echo "Context directory creation skipped."
-        echo "Please create the context directory ($CONTEXT_DIR) and run this setup script again."
-        exit 1
-    fi
-else
-    echo "Context directory already exists: $CONTEXT_DIR"
+    echo "Creating directory: $CONTEXT_DIR"
+    mkdir -p "$CONTEXT_DIR"
 fi
 
-# Configuration update tracking variables
-NEEDS_CONFIG_UPDATE=false
-CONFIG_MYAI_HOME=""
-CONFIG_ADD_PATH=false
+echo ""
 
-# Function to remove MyAI configuration section from config file
-remove_myai_config() {
-    local config_file="$1"
-    # Create a temporary file without the MyAI section
-    local temp_file=$(mktemp)
-    local in_section=false
-    
-    while IFS= read -r line || [ -n "$line" ]; do
-        if [[ "$line" == "# MyAI configuration" ]] || [[ "$line" == "# Add MyAI bin directory to PATH" ]]; then
-            in_section=true
-            continue
-        fi
-        if [ "$in_section" = true ]; then
-            # Check if this is still part of MyAI section (export MYAI_HOME or export PATH with MYAI_HOME)
-            if [[ "$line" == export\ MYAI_HOME=* ]] || [[ "$line" == export\ PATH=*MYAI_HOME* ]]; then
-                continue
-            fi
-            # If we hit a blank line or non-MyAI line, we're done with the section
-            if [[ -z "$line" ]] || [[ "$line" != export\ * ]]; then
-                in_section=false
-                # Don't skip this line, include it
-            fi
-        fi
-        if [ "$in_section" != true ]; then
-            echo "$line" >> "$temp_file"
-        fi
-    done < "$config_file"
-    
-    mv "$temp_file" "$config_file"
-}
+# --- Create Launcher Script ---
 
-# Function to apply all configuration updates at once
-apply_config_updates() {
-    if [ "$NEEDS_CONFIG_UPDATE" != "true" ]; then
-        return
-    fi
-    
-    # Remove existing MyAI configuration section if it exists
-    if grep -q "# MyAI configuration" "$CONFIG_FILE" 2>/dev/null; then
-        remove_myai_config "$CONFIG_FILE"
-    fi
-    
-    # Add consolidated MyAI configuration section
-    if [ -n "$CONFIG_MYAI_HOME" ]; then
-        echo "" >> "$CONFIG_FILE"
-        echo "# MyAI configuration" >> "$CONFIG_FILE"
-        echo "export MYAI_HOME=\"$CONFIG_MYAI_HOME\"" >> "$CONFIG_FILE"
-        if [ "$CONFIG_ADD_PATH" = "true" ]; then
-            echo "export PATH=\"\$MYAI_HOME/bin:\$PATH\"" >> "$CONFIG_FILE"
-        fi
-        echo "Updated MyAI configuration in $CONFIG_FILE"
-    fi
-}
+LAUNCHER_PATH="$MYAI_HOME/bin/$AI_SYSTEM_NAME"
 
-# Check for MYAI_HOME environment variable
-if [ -z "$MYAI_HOME" ]; then
-    echo "MYAI_HOME is not set."
-    read "user_input?Enter MYAI_HOME path (default: ~/.myai): "
-    
-    # Use default if user input is empty
-    if [ -z "$user_input" ]; then
-        MYAI_HOME="$HOME/.myai"
-    else
-        # Expand ~ if user typed it (zsh handles this natively)
-        MYAI_HOME="${user_input/#\~/$HOME}"
-        # Additional zsh tilde expansion
-        if [[ "$MYAI_HOME" == ~* ]]; then
-            MYAI_HOME="${MYAI_HOME/#\~/$HOME}"
-        fi
-    fi
-    
-    echo "MYAI_HOME will be set to: $MYAI_HOME"
-    
-    # Check if MyAI configuration already exists in the config file
-    if grep -q "# MyAI configuration" "$CONFIG_FILE" 2>/dev/null; then
-        echo "MyAI configuration already exists in $CONFIG_FILE"
-        read "update_choice?Do you want to update it? (y/n): "
-        if [ "$update_choice" = "y" ] || [ "$update_choice" = "Y" ]; then
-            # Track that we need to update the configuration
-            NEEDS_CONFIG_UPDATE=true
-            CONFIG_MYAI_HOME="$MYAI_HOME"
-        else
-            echo "Skipping update. Using existing MYAI_HOME from config file."
-            # Extract MYAI_HOME from config file for use in rest of script
-            MYAI_HOME=$(grep "^export MYAI_HOME=" "$CONFIG_FILE" 2>/dev/null | sed 's/^export MYAI_HOME="\(.*\)"/\1/' | sed "s|^~|$HOME|")
-        fi
-    else
-        # No existing configuration, track that we need to add it
-        NEEDS_CONFIG_UPDATE=true
-        CONFIG_MYAI_HOME="$MYAI_HOME"
-    fi
-else
-    echo "MYAI_HOME is already set to: $MYAI_HOME"
-    # Check if it's in the config file, if not we should add it
-    if ! grep -q "^export MYAI_HOME=" "$CONFIG_FILE" 2>/dev/null; then
-        NEEDS_CONFIG_UPDATE=true
-        CONFIG_MYAI_HOME="$MYAI_HOME"
-    fi
-fi
+echo "Creating launcher script: $LAUNCHER_PATH"
 
-# Ensure we have MYAI_HOME value (either from env or just set)
-if [ -z "$MYAI_HOME" ]; then
-    # If still not set, try to get it from the config file
-    MYAI_HOME=$(grep "^export MYAI_HOME=" "$CONFIG_FILE" 2>/dev/null | sed 's/^export MYAI_HOME="\(.*\)"/\1/' | sed "s|^~|$HOME|")
-fi
-
-# Check if MYAI_HOME directory exists
-if [ -n "$MYAI_HOME" ]; then
-    if [ ! -d "$MYAI_HOME" ]; then
-        echo "MYAI_HOME directory does not exist: $MYAI_HOME"
-        read "create_choice?Do you want to create it? (y/n): "
-        if [ "$create_choice" = "y" ] || [ "$create_choice" = "Y" ]; then
-            mkdir -p "$MYAI_HOME"
-            echo "Created MYAI_HOME directory: $MYAI_HOME"
-        else
-            echo "Directory creation skipped."
-            echo "Please create the MYAI_HOME directory ($MYAI_HOME) and run this setup script again."
-            exit 1
-        fi
-    fi
-    
-    # Create bin subdirectory if MYAI_HOME exists
-    if [ -d "$MYAI_HOME" ]; then
-        BIN_DIR="$MYAI_HOME/bin"
-        if [ ! -d "$BIN_DIR" ]; then
-            mkdir -p "$BIN_DIR"
-            echo "Created bin directory: $BIN_DIR"
-        else
-            echo "Bin directory already exists: $BIN_DIR"
-        fi
-        
-        # Check if bin directory is already in PATH
-        if grep -q "\$MYAI_HOME/bin" "$CONFIG_FILE" 2>/dev/null; then
-            echo "MYAI_HOME/bin is already in PATH"
-        else
-            # PATH not in config - track that we need to add it
-            if [ -z "$CONFIG_MYAI_HOME" ]; then
-                # If we haven't set CONFIG_MYAI_HOME yet, use current MYAI_HOME value
-                CONFIG_MYAI_HOME="$MYAI_HOME"
-            fi
-            CONFIG_ADD_PATH=true
-            NEEDS_CONFIG_UPDATE=true
-            echo "Will add MYAI_HOME/bin to PATH"
-        fi
-        
-        # Create the AI system script
-        AI_SCRIPT_PATH="$BIN_DIR/$AI_SYSTEM_NAME"
-        create_ai_script=false
-        if [ -f "$AI_SCRIPT_PATH" ]; then
-            echo "Script $AI_SYSTEM_NAME already exists in bin directory"
-            read "overwrite_choice?Do you want to overwrite it? (y/n): "
-            if [ "$overwrite_choice" = "y" ] || [ "$overwrite_choice" = "Y" ]; then
-                create_ai_script=true
-            else
-                echo "Skipping script creation."
-            fi
-        else
-            create_ai_script=true
-        fi
-        
-        if [ "$create_ai_script" = "true" ]; then
-            cat > "$AI_SCRIPT_PATH" << SCRIPT_EOF
+cat > "$LAUNCHER_PATH" << 'LAUNCHER_HEADER'
 #!/bin/zsh
-# MyAI Agent System Launcher
-# This script was generated by setup.sh
-# AI System: $AI_SYSTEM_NAME
-# Agent Command: $AI_AGENT_COMMAND
+# MyAI Launcher Script
+# Generated by setup.sh
 
-exec $AI_AGENT_COMMAND "\$@"
-SCRIPT_EOF
-            chmod +x "$AI_SCRIPT_PATH"
-            echo "Created AI system script: $AI_SCRIPT_PATH"
+LAUNCHER_HEADER
+
+# Add configuration
+cat >> "$LAUNCHER_PATH" << LAUNCHER_CONFIG
+AI_NAME="$AI_SYSTEM_NAME"
+CONTEXT_DIR="$CONTEXT_DIR"
+DEFAULT_AGENT="opencode"
+LAUNCHER_CONFIG
+
+# Add enabled agents array
+echo "ENABLED_AGENTS=(${ENABLED_AGENTS[@]})" >> "$LAUNCHER_PATH"
+
+# Add the rest of the launcher logic
+cat >> "$LAUNCHER_PATH" << 'LAUNCHER_BODY'
+
+show_help() {
+    echo "Usage: $AI_NAME [--agent <name>] [args...]"
+    echo ""
+    echo "Options:"
+    echo "  --opencode    Use Open Code (default)"
+    echo "  --claude      Use Claude Code"
+    echo "  --gemini      Use Gemini CLI"
+    echo "  --help        Show this help message"
+    echo ""
+    echo "Enabled agents: ${ENABLED_AGENTS[*]}"
+}
+
+# Parse arguments
+AGENT="$DEFAULT_AGENT"
+PASS_ARGS=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --opencode)
+            AGENT="opencode"
+            shift
+            ;;
+        --claude)
+            AGENT="claude"
+            shift
+            ;;
+        --gemini)
+            AGENT="gemini"
+            shift
+            ;;
+        --help|-h)
+            show_help
+            exit 0
+            ;;
+        *)
+            PASS_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
+# Check if agent is enabled
+if [[ ! " ${ENABLED_AGENTS[*]} " =~ " ${AGENT} " ]]; then
+    echo "Error: Agent '$AGENT' is not enabled."
+    echo "Enabled agents: ${ENABLED_AGENTS[*]}"
+    exit 1
+fi
+
+# Change to context directory
+cd "$CONTEXT_DIR" || {
+    echo "Error: Could not change to context directory: $CONTEXT_DIR" >&2
+    exit 1
+}
+
+# Launch the agent
+exec "$AGENT" "${PASS_ARGS[@]}"
+LAUNCHER_BODY
+
+chmod +x "$LAUNCHER_PATH"
+echo "Launcher script created: $LAUNCHER_PATH"
+echo ""
+
+# --- Shell Aliases ---
+
+# Only offer aliases if we have additional backends enabled
+if [[ " ${ENABLED_AGENTS[*]} " =~ " claude " ]] || [[ " ${ENABLED_AGENTS[*]} " =~ " gemini " ]]; then
+    echo "Would you like to set up some convenient aliases?"
+
+    # Check if name has capitals
+    AI_NAME_LOWER="${AI_SYSTEM_NAME:l}"
+    HAS_CAPITALS=false
+    if [ "$AI_SYSTEM_NAME" != "$AI_NAME_LOWER" ]; then
+        HAS_CAPITALS=true
+    fi
+
+    if [[ " ${ENABLED_AGENTS[*]} " =~ " claude " ]]; then
+        echo "  ${AI_SYSTEM_NAME}c  -> $AI_SYSTEM_NAME --claude"
+    fi
+    if [[ " ${ENABLED_AGENTS[*]} " =~ " gemini " ]]; then
+        echo "  ${AI_SYSTEM_NAME}g  -> $AI_SYSTEM_NAME --gemini"
+    fi
+
+    if [ "$HAS_CAPITALS" = true ]; then
+        echo "  ${AI_NAME_LOWER}    -> $AI_SYSTEM_NAME"
+        if [[ " ${ENABLED_AGENTS[*]} " =~ " claude " ]]; then
+            echo "  ${AI_NAME_LOWER}c   -> $AI_SYSTEM_NAME --claude"
         fi
+        if [[ " ${ENABLED_AGENTS[*]} " =~ " gemini " ]]; then
+            echo "  ${AI_NAME_LOWER}g   -> $AI_SYSTEM_NAME --gemini"
+        fi
+    fi
+    echo ""
+
+    read "setup_aliases?Add these aliases to your shell? (y/n): "
+
+    if [ "$setup_aliases" = "y" ] || [ "$setup_aliases" = "Y" ]; then
+        # Remove old aliases if they exist
+        sed -i '' "/^alias ${AI_SYSTEM_NAME}c=/d" "$CONFIG_FILE" 2>/dev/null
+        sed -i '' "/^alias ${AI_SYSTEM_NAME}g=/d" "$CONFIG_FILE" 2>/dev/null
+        sed -i '' "/^alias ${AI_NAME_LOWER}=/d" "$CONFIG_FILE" 2>/dev/null
+        sed -i '' "/^alias ${AI_NAME_LOWER}c=/d" "$CONFIG_FILE" 2>/dev/null
+        sed -i '' "/^alias ${AI_NAME_LOWER}g=/d" "$CONFIG_FILE" 2>/dev/null
+
+        # Add new aliases
+        if [[ " ${ENABLED_AGENTS[*]} " =~ " claude " ]]; then
+            echo "alias ${AI_SYSTEM_NAME}c=\"$AI_SYSTEM_NAME --claude\"" >> "$CONFIG_FILE"
+            echo "  ✓ Added alias: ${AI_SYSTEM_NAME}c"
+        fi
+        if [[ " ${ENABLED_AGENTS[*]} " =~ " gemini " ]]; then
+            echo "alias ${AI_SYSTEM_NAME}g=\"$AI_SYSTEM_NAME --gemini\"" >> "$CONFIG_FILE"
+            echo "  ✓ Added alias: ${AI_SYSTEM_NAME}g"
+        fi
+
+        if [ "$HAS_CAPITALS" = true ]; then
+            echo "alias ${AI_NAME_LOWER}=\"$AI_SYSTEM_NAME\"" >> "$CONFIG_FILE"
+            echo "  ✓ Added alias: ${AI_NAME_LOWER}"
+            if [[ " ${ENABLED_AGENTS[*]} " =~ " claude " ]]; then
+                echo "alias ${AI_NAME_LOWER}c=\"$AI_SYSTEM_NAME --claude\"" >> "$CONFIG_FILE"
+                echo "  ✓ Added alias: ${AI_NAME_LOWER}c"
+            fi
+            if [[ " ${ENABLED_AGENTS[*]} " =~ " gemini " ]]; then
+                echo "alias ${AI_NAME_LOWER}g=\"$AI_SYSTEM_NAME --gemini\"" >> "$CONFIG_FILE"
+                echo "  ✓ Added alias: ${AI_NAME_LOWER}g"
+            fi
+        fi
+        echo ""
     fi
 fi
 
-# Apply all configuration updates at once
-apply_config_updates
+# --- Setup Complete ---
 
-if [ "$NEEDS_CONFIG_UPDATE" = "true" ]; then
-    echo "Please run 'source $CONFIG_FILE' or restart your terminal to apply changes."
-fi
-
-echo "Setup complete!"
+echo "════════════════════════════════════════════════════════════════"
+echo "  Setup Complete!"
+echo "════════════════════════════════════════════════════════════════"
+echo ""
+echo "  AI Assistant:    $AI_SYSTEM_NAME"
+echo "  MYAI_HOME:       $MYAI_HOME"
+echo "  Context Dir:     $CONTEXT_DIR"
+echo "  Backends:        ${ENABLED_AGENTS[*]}"
+echo ""
+echo "  Launcher:        $LAUNCHER_PATH"
+echo ""
+echo "  To get started, run:"
+echo "    source $CONFIG_FILE"
+echo "    $AI_SYSTEM_NAME"
+echo ""
+echo "════════════════════════════════════════════════════════════════"
+echo ""
 
